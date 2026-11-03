@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="brand">#FF7A45</color>       <!-- 메인 주황 -->
+    <color name="brand_light">#FFE4D6</color> <!-- 배경용 연한 주황 -->
+    <color name="text_gray">#757575</color>   <!-- 보조 글씨 -->
+</resources>
