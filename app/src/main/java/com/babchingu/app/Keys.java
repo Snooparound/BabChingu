@@ -7,8 +7,14 @@ public class Keys {
     // Firestore 컬렉션 이름
     public static final String COL_USERS = "users";
     public static final String COL_POSTS = "posts";
+    public static final String FIELD_PARTICIPANTS = "participants";
+    public static final String FIELD_STATUS = "status";
+    public static final String FIELD_CREATED_AT = "createdAt";
 
     // 모집 상태
     public static final String STATUS_OPEN = "OPEN";
     public static final String STATUS_CLOSED = "CLOSED";
+
+    // 신고 컬렉션
+    public static final String COL_REPORTS = "reports";
 }
