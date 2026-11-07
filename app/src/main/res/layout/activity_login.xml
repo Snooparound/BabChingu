@@ -2,13 +2,64 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:gravity="center_vertical"
     android:orientation="vertical"
     android:padding="20dp">
 
-    <Button
-        android:id="@+id/btnTempHome"
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="임시: 홈으로 이동" />
+        android:gravity="center"
+        android:text="🍚 밥친구"
+        android:textColor="@color/brand"
+        android:textSize="36sp"
+        android:textStyle="bold" />
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="32dp"
+        android:gravity="center"
+        android:text="수업 끝나고 같이 밥 먹을 사람"
+        android:textColor="@color/text_gray" />
+
+    <EditText
+        android:id="@+id/etLoginEmail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="학교 이메일"
+        android:inputType="textEmailAddress" />
+
+    <EditText
+        android:id="@+id/etLoginPassword"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="비밀번호"
+        android:inputType="textPassword" />
+
+    <Button
+        android:id="@+id/btnLoginSubmit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="@color/brand"
+        android:text="로그인" />
+
+    <Button
+        android:id="@+id/btnLoginSignUp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="회원가입" />
+
+    <TextView
+        android:id="@+id/tvLoginForgot"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:padding="8dp"
+        android:text="비밀번호를 잊으셨나요?"
+        android:textColor="@color/text_gray" />
 </LinearLayout>
