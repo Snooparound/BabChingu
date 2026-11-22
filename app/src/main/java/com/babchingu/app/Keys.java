@@ -26,4 +26,7 @@ public class Keys {
 
     public static final String FIELD_POST_ID = "postId";
     public static final String FIELD_REPORTER_UID = "reporterUid";
+
+    // 모집글은 올린 뒤 24시간이 지나면 목록에서 사라지고 삭제됨
+    public static final long POST_EXPIRE_MILLIS = 24L * 60 * 60 * 1000;
 }

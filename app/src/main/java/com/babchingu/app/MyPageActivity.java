@@ -21,6 +21,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.ListenerRegistration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -87,8 +88,8 @@ public class MyPageActivity extends AppCompatActivity {
 
     // 내 정보 (닉네임을 바꾸면 자동으로 다시 표시됨)
     private void loadProfile() {
-        db.collection(Keys.COL_USERS).document(myUid)
-                .addSnapshotListener(this, (doc, e) -> {
+        listeners.add(db.collection(Keys.COL_USERS).document(myUid)
+                .addSnapshotListener((doc, e) -> {
                     if (e != null || doc == null) return;
                     User u = doc.toObject(User.class);
                     if (u == null) {
@@ -97,17 +98,19 @@ public class MyPageActivity extends AppCompatActivity {
                     }
                     tvMyNickname.setText(u.nickname + " 님");
                     tvMyInfo.setText(u.dept + " · " + u.email);
-                });
+                }));
     }
 
     // 내가 참여자에 들어간 글 전부 가져오기
     // → 작성자가 나면 "내가 만든 모임", 아니면 "참여한 모임"
     // (모집글 작성자도 participants에 들어가므로 쿼리 하나로 둘 다 해결)
     private void loadMyPosts() {
-        db.collection(Keys.COL_POSTS)
+        listeners.add(db.collection(Keys.COL_POSTS)
                 .whereArrayContains(Keys.FIELD_PARTICIPANTS, myUid)
-                .addSnapshotListener(this, (snap, e) -> {
+                .addSnapshotListener((snap, e) -> {
                     if (e != null || snap == null) {
+                        // 로그아웃 직후에는 안내 없이 넘어감
+                        if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
                         Toast.makeText(this, "목록을 불러오지 못했어요", Toast.LENGTH_SHORT).show();
                         return;
                     }
@@ -117,6 +120,8 @@ public class MyPageActivity extends AppCompatActivity {
                         Post p = d.toObject(Post.class);
                         if (p == null) continue;
                         p.id = d.getId();
+                        // 올린 지 24시간이 지난 글은 숨김 (홈 화면에서 삭제됨)
+                        if (System.currentTimeMillis() - p.createdAt >= Keys.POST_EXPIRE_MILLIS) continue;
                         if (myUid.equals(p.authorUid)) createdPosts.add(p);
                         else joinedPosts.add(p);
                     }
@@ -124,7 +129,7 @@ public class MyPageActivity extends AppCompatActivity {
                     createdPosts.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
                     joinedPosts.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
                     showTab();
-                });
+                }));
     }
 
     private void showTab() {
@@ -216,5 +221,16 @@ public class MyPageActivity extends AppCompatActivity {
     public boolean onSupportNavigateUp() {
         finish();
         return true;
+    }
+
+    // 실시간 연결 목록: 다른 화면에 갔다 와도 끊기지 않게 직접 관리
+    private final List<ListenerRegistration> listeners = new ArrayList<>();
+
+    // 화면이 완전히 닫힐 때 실시간 연결 해제
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        for (ListenerRegistration r : listeners) r.remove();
+        listeners.clear();
     }
 }

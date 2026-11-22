@@ -21,20 +21,24 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.ListenerRegistration;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class PostDetailActivity extends AppCompatActivity {
 
     TextView tvDetailTime, tvDetailPlace, tvDetailPeople,
             tvDetailAuthor, tvDetailMemo;
-    Button btnDetailJoin, btnDetailCancel;
-    LinearLayout layoutDetailInfo;
+    Button btnDetailJoin, btnDetailCancel, btnDetailClose, btnDetailDelete;
+    LinearLayout layoutDetailInfo, layoutDetailAuthor;
 
     FirebaseFirestore db;
     DocumentReference postRef;
     String postId, myUid;
+    boolean deleting = false;   // 내가 삭제하는 중이면 "삭제된 글" 안내를 띄우지 않음
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,25 +72,30 @@ public class PostDetailActivity extends AppCompatActivity {
         tvDetailMemo = findViewById(R.id.tvDetailMemo);
         btnDetailJoin = findViewById(R.id.btnDetailJoin);
         btnDetailCancel = findViewById(R.id.btnDetailCancel);
+        btnDetailClose = findViewById(R.id.btnDetailClose);
+        btnDetailDelete = findViewById(R.id.btnDetailDelete);
+        layoutDetailAuthor = findViewById(R.id.layoutDetailAuthor);
         layoutDetailInfo = findViewById(R.id.layoutDetailInfo);
 
         db = FirebaseFirestore.getInstance();
         postRef = db.collection(Keys.COL_POSTS).document(postId);
 
         // 참여 인원이 바뀌면 화면도 자동으로 바뀜
-        postRef.addSnapshotListener(this, (doc, e) -> {
+        listeners.add(postRef.addSnapshotListener((doc, e) -> {
             if (e != null || doc == null) return;
             if (!doc.exists()) {
-                toast("삭제된 모집글이에요");
+                if (!deleting) toast("삭제된 모집글이에요");
                 finish();
                 return;
             }
             Post p = doc.toObject(Post.class);
             if (p != null) showPost(p);
-        });
+        }));
 
         btnDetailJoin.setOnClickListener(v -> confirmJoin());
         btnDetailCancel.setOnClickListener(v -> confirmCancel());
+        btnDetailClose.setOnClickListener(v -> confirmClose());
+        btnDetailDelete.setOnClickListener(v -> confirmDelete());
 
         // 정보 영역을 길게 누르면 신고 메뉴 (7장 컨텍스트 메뉴)
         registerForContextMenu(layoutDetailInfo);
@@ -121,6 +130,12 @@ public class PostDetailActivity extends AppCompatActivity {
 
         // 참여 취소는 참여한 사람에게만 보이기 (작성자는 제외)
         btnDetailCancel.setVisibility(joined && !isAuthor ? View.VISIBLE : View.GONE);
+
+        // 작성자에게만 모집 마감 / 삭제 버튼 보이기
+        layoutDetailAuthor.setVisibility(isAuthor ? View.VISIBLE : View.GONE);
+        boolean closed = Keys.STATUS_CLOSED.equals(p.status);
+        btnDetailClose.setText(closed ? "마감된 모임" : "모집 마감");
+        btnDetailClose.setEnabled(!closed);
     }
 
     // 7장 대화상자로 한 번 더 확인
@@ -200,8 +215,11 @@ public class PostDetailActivity extends AppCompatActivity {
             }
 
             tx.update(postRef, Keys.FIELD_PARTICIPANTS, FieldValue.arrayRemove(myUid));
-            // 한 자리가 비었으니 다시 모집 중으로
-            tx.update(postRef, Keys.FIELD_STATUS, Keys.STATUS_OPEN);
+            // 정원이 차서 자동 마감됐던 모임이면 한 자리가 비었으니 다시 모집 중으로
+            // (작성자가 직접 마감한 모임은 마감 그대로 유지)
+            if (p.participants.size() >= p.maxPeople) {
+                tx.update(postRef, Keys.FIELD_STATUS, Keys.STATUS_OPEN);
+            }
             return null;
         }).addOnSuccessListener(r -> {
             btnDetailCancel.setEnabled(true);
@@ -210,6 +228,51 @@ public class PostDetailActivity extends AppCompatActivity {
             btnDetailCancel.setEnabled(true);
             toast(e.getMessage() != null ? e.getMessage() : "취소하지 못했어요");
         });
+    }
+
+    // 작성자: 모집 마감 (마감하면 참여한 사람에게만 보임)
+    private void confirmClose() {
+        AlertDialog.Builder dlg = new AlertDialog.Builder(PostDetailActivity.this);
+        dlg.setTitle("모집 마감");
+        dlg.setMessage("모집을 마감하시겠습니까?\n마감하면 참여한 사람에게만 보여요.");
+        dlg.setPositiveButton("예", (dialog, which) -> closePost());
+        dlg.setNegativeButton("아니오", null);
+        dlg.show();
+    }
+
+    private void closePost() {
+        btnDetailClose.setEnabled(false);
+        postRef.update(Keys.FIELD_STATUS, Keys.STATUS_CLOSED)
+                .addOnSuccessListener(x -> toast("모집을 마감했어요"))
+                .addOnFailureListener(e -> {
+                    btnDetailClose.setEnabled(true);
+                    toast("마감하지 못했어요");
+                });
+    }
+
+    // 작성자: 모집글 삭제 (되돌릴 수 없음)
+    private void confirmDelete() {
+        AlertDialog.Builder dlg = new AlertDialog.Builder(PostDetailActivity.this);
+        dlg.setTitle("모집글 삭제");
+        dlg.setMessage("모집글을 삭제하시겠습니까?\n삭제하면 되돌릴 수 없어요.");
+        dlg.setPositiveButton("예", (dialog, which) -> deletePost());
+        dlg.setNegativeButton("아니오", null);
+        dlg.show();
+    }
+
+    private void deletePost() {
+        deleting = true;
+        btnDetailDelete.setEnabled(false);
+        postRef.delete()
+                .addOnSuccessListener(x -> {
+                    toast("모집글을 삭제했어요");
+                    finish();
+                })
+                .addOnFailureListener(e -> {
+                    deleting = false;
+                    btnDetailDelete.setEnabled(true);
+                    toast("삭제하지 못했어요");
+                });
     }
 
     // ── 7장 컨텍스트 메뉴: 신고하기 ──
@@ -256,5 +319,16 @@ public class PostDetailActivity extends AppCompatActivity {
     public boolean onSupportNavigateUp() {
         finish();
         return true;
+    }
+
+    // 실시간 연결 목록: 다른 화면에 갔다 와도 끊기지 않게 직접 관리
+    private final List<ListenerRegistration> listeners = new ArrayList<>();
+
+    // 화면이 완전히 닫힐 때 실시간 연결 해제
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        for (ListenerRegistration r : listeners) r.remove();
+        listeners.clear();
     }
 }
