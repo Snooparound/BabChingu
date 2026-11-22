@@ -29,7 +29,7 @@ public class PostDetailActivity extends AppCompatActivity {
 
     TextView tvDetailTime, tvDetailPlace, tvDetailPeople,
             tvDetailAuthor, tvDetailMemo;
-    Button btnDetailJoin;
+    Button btnDetailJoin, btnDetailCancel;
     LinearLayout layoutDetailInfo;
 
     FirebaseFirestore db;
@@ -41,6 +41,10 @@ public class PostDetailActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_post_detail);
         setTitle("모집 상세");
+        // 상단 바 왼쪽에 뒤로가기(←) 버튼 표시
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
         postId = getIntent().getStringExtra(Keys.EXTRA_POST_ID);
         if (postId == null || postId.trim().isEmpty()) {
@@ -63,6 +67,7 @@ public class PostDetailActivity extends AppCompatActivity {
         tvDetailAuthor = findViewById(R.id.tvDetailAuthor);
         tvDetailMemo = findViewById(R.id.tvDetailMemo);
         btnDetailJoin = findViewById(R.id.btnDetailJoin);
+        btnDetailCancel = findViewById(R.id.btnDetailCancel);
         layoutDetailInfo = findViewById(R.id.layoutDetailInfo);
 
         db = FirebaseFirestore.getInstance();
@@ -81,6 +86,7 @@ public class PostDetailActivity extends AppCompatActivity {
         });
 
         btnDetailJoin.setOnClickListener(v -> confirmJoin());
+        btnDetailCancel.setOnClickListener(v -> confirmCancel());
 
         // 정보 영역을 길게 누르면 신고 메뉴 (7장 컨텍스트 메뉴)
         registerForContextMenu(layoutDetailInfo);
@@ -100,8 +106,10 @@ public class PostDetailActivity extends AppCompatActivity {
         boolean full = people >= p.maxPeople
                 || Keys.STATUS_CLOSED.equals(p.status);
 
+        boolean isAuthor = myUid.equals(p.authorUid);
+
         if (joined) {
-            btnDetailJoin.setText("참여 완료");
+            btnDetailJoin.setText(isAuthor ? "내가 만든 모임" : "참여 완료");
             btnDetailJoin.setEnabled(false);
         } else if (full) {
             btnDetailJoin.setText("마감됐어요");
@@ -110,6 +118,9 @@ public class PostDetailActivity extends AppCompatActivity {
             btnDetailJoin.setText("참여하기");
             btnDetailJoin.setEnabled(true);
         }
+
+        // 참여 취소는 참여한 사람에게만 보이기 (작성자는 제외)
+        btnDetailCancel.setVisibility(joined && !isAuthor ? View.VISIBLE : View.GONE);
     }
 
     // 7장 대화상자로 한 번 더 확인
@@ -158,6 +169,49 @@ public class PostDetailActivity extends AppCompatActivity {
         });
     }
 
+    // 7장 대화상자: 예 / 아니오로 한 번 더 확인
+    private void confirmCancel() {
+        AlertDialog.Builder dlg = new AlertDialog.Builder(PostDetailActivity.this);
+        dlg.setTitle("참여 취소");
+        dlg.setMessage("참여를 취소하시겠습니까?");
+        dlg.setPositiveButton("예", (dialog, which) -> cancelJoin());
+        dlg.setNegativeButton("아니오", null);
+        dlg.show();
+    }
+
+    // 트랜잭션: 참여자 목록에서 내 uid를 빼고, 마감됐던 모임은 다시 모집 중으로
+    private void cancelJoin() {
+        btnDetailCancel.setEnabled(false);
+
+        db.runTransaction(tx -> {
+            DocumentSnapshot snap = tx.get(postRef);
+            Post p = snap.toObject(Post.class);
+            if (p == null) {
+                throw new FirebaseFirestoreException("글이 없어요",
+                        FirebaseFirestoreException.Code.NOT_FOUND);
+            }
+            if (p.participants == null || !p.participants.contains(myUid)) {
+                throw new FirebaseFirestoreException("참여하지 않은 모임이에요",
+                        FirebaseFirestoreException.Code.ABORTED);
+            }
+            if (myUid.equals(p.authorUid)) {
+                throw new FirebaseFirestoreException("내가 만든 모임은 취소할 수 없어요",
+                        FirebaseFirestoreException.Code.ABORTED);
+            }
+
+            tx.update(postRef, Keys.FIELD_PARTICIPANTS, FieldValue.arrayRemove(myUid));
+            // 한 자리가 비었으니 다시 모집 중으로
+            tx.update(postRef, Keys.FIELD_STATUS, Keys.STATUS_OPEN);
+            return null;
+        }).addOnSuccessListener(r -> {
+            btnDetailCancel.setEnabled(true);
+            toast("참여를 취소했어요");
+        }).addOnFailureListener(e -> {
+            btnDetailCancel.setEnabled(true);
+            toast(e.getMessage() != null ? e.getMessage() : "취소하지 못했어요");
+        });
+    }
+
     // ── 7장 컨텍스트 메뉴: 신고하기 ──
     @Override
     public void onCreateContextMenu(ContextMenu menu, View v,
@@ -195,5 +249,12 @@ public class PostDetailActivity extends AppCompatActivity {
 
     private void toast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    // 상단 바의 ← 버튼을 누르면 이전 화면으로 돌아감
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 }
