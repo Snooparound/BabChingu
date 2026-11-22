@@ -2,7 +2,7 @@ package com.babchingu.app;
 
 import android.content.Intent;
 import android.os.Bundle;
-Simport android.util.Log;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.Toast;
 
