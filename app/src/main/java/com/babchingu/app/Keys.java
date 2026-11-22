@@ -17,4 +17,10 @@ public class Keys {
 
     // 신고 컬렉션
     public static final String COL_REPORTS = "reports";
+
+    // 학교 이메일 도메인 (학교 메일 주소 형식 확인해서 맞게 수정)
+    public static final String SCHOOL_DOMAIN = "@kw.ac.kr";
+
+    // users 필드
+    public static final String FIELD_NICKNAME = "nickname";
 }

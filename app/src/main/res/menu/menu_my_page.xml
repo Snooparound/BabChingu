@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menuMyEditNickname"
+        android:title="닉네임 변경" />
+    <item
+        android:id="@+id/menuMyLogout"
+        android:title="로그아웃" />
+</menu>

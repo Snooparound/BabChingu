@@ -3,7 +3,9 @@ package com.babchingu.app;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -11,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.babchingu.app.model.Post;
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
@@ -24,6 +27,8 @@ public class HomeActivity extends AppCompatActivity {
     private static final String TAG = "HomeActivity";
 
     private PostAdapter adapter;
+    private TextView tvHomeWeather;
+    private TextView tvHomeEmpty;
     private ListenerRegistration postsListener;
 
     @Override
@@ -31,6 +36,14 @@ public class HomeActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_home);
         setTitle("밥친구");
+
+        if (FirebaseAuth.getInstance().getCurrentUser() == null) {
+            openLogin();
+            return;
+        }
+
+        tvHomeWeather = findViewById(R.id.tvHomeWeather);
+        tvHomeEmpty = findViewById(R.id.tvHomeEmpty);
 
         RecyclerView rvHomePosts =
                 findViewById(R.id.rvHomePosts);
@@ -59,12 +72,30 @@ public class HomeActivity extends AppCompatActivity {
                 startActivity(new Intent(
                         HomeActivity.this,
                         MyPageActivity.class)));
+
+        WeatherApi.fetch(message -> runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed()) {
+                tvHomeWeather.setText(message);
+            }
+        }));
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        loadPosts();
+
+        if (isFinishing()) {
+            return;
+        }
+
+        if (FirebaseAuth.getInstance().getCurrentUser() == null) {
+            openLogin();
+            return;
+        }
+
+        if (adapter != null) {
+            loadPosts();
+        }
     }
 
     @Override
@@ -76,22 +107,18 @@ public class HomeActivity extends AppCompatActivity {
         super.onStop();
     }
 
+    private void openLogin() {
+        startActivity(new Intent(this, LoginActivity.class));
+        finish();
+    }
+
     private void loadPosts() {
         if (postsListener != null) {
             return;
         }
+
         Log.d(TAG, "모집 목록 조회 시작");
-        FirebaseFirestore.getInstance()
-                .collection(Keys.COL_POSTS)
-                .orderBy(
-                        Keys.FIELD_CREATED_AT,
-                        Query.Direction.DESCENDING)
-                .get(com.google.firebase.firestore.Source.SERVER)
-                .addOnSuccessListener(result ->
-                        Log.d(TAG, "서버 직접 조회 성공: "
-                                + result.size() + "개"))
-                .addOnFailureListener(error ->
-                        Log.e(TAG, "서버 직접 조회 실패", error));
+
         postsListener = FirebaseFirestore.getInstance()
                 .collection(Keys.COL_POSTS)
                 .orderBy(
@@ -111,8 +138,11 @@ public class HomeActivity extends AppCompatActivity {
                     if (snapshot == null) {
                         return;
                     }
+
                     Log.d(TAG, "조회 결과: " + snapshot.size()
-                            + "개, 캐시=" + snapshot.getMetadata().isFromCache());
+                            + "개, 캐시="
+                            + snapshot.getMetadata().isFromCache());
+
                     List<Post> posts = new ArrayList<>();
 
                     try {
@@ -141,6 +171,8 @@ public class HomeActivity extends AppCompatActivity {
                     }
 
                     adapter.setPosts(posts);
+                    tvHomeEmpty.setVisibility(
+                            posts.isEmpty() ? View.VISIBLE : View.GONE);
                 });
     }
 }
