@@ -35,6 +35,10 @@ public class CreatePostActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_create_post);
         setTitle("모집하기");
+        // 상단 바 왼쪽에 뒤로가기(←) 버튼 표시
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
         FirebaseUser fu = FirebaseAuth.getInstance().getCurrentUser();
         if (fu == null) {
@@ -139,5 +143,12 @@ public class CreatePostActivity extends AppCompatActivity {
 
     private void toast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    // 상단 바의 ← 버튼을 누르면 이전 화면으로 돌아감
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 }

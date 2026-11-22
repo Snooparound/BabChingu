@@ -48,6 +48,10 @@ public class MyPageActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_my_page);
         setTitle("마이페이지");
+        // 상단 바 왼쪽에 뒤로가기(←) 버튼 표시
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
         // 로그인이 풀려 있으면 로그인 화면으로
         FirebaseUser fu = FirebaseAuth.getInstance().getCurrentUser();
@@ -205,5 +209,12 @@ public class MyPageActivity extends AppCompatActivity {
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
         finish();
+    }
+
+    // 상단 바의 ← 버튼을 누르면 이전 화면으로 돌아감
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 }

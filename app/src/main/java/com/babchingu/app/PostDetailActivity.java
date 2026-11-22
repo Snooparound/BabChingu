@@ -11,6 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -38,6 +39,7 @@ public class PostDetailActivity extends AppCompatActivity {
     private TextView tvDetailAuthor;
     private TextView tvDetailMemo;
     private Button btnDetailJoin;
+    private Button btnDetailCancel;
     private LinearLayout layoutDetailInfo;
 
     private FirebaseFirestore db;
@@ -46,8 +48,9 @@ public class PostDetailActivity extends AppCompatActivity {
     private String postId;
     private String myUid;
     private Post currentPost;
-    private boolean joining;
-    private boolean joinedSuccessfully;
+    private DetailAction activeAction;
+    private boolean awaitingMembership;
+    private boolean expectedMembership;
     private boolean reporting;
 
     @Override
@@ -55,6 +58,10 @@ public class PostDetailActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_post_detail);
         setTitle("모집 상세");
+        ActionBar actionBar = getSupportActionBar();
+        if (actionBar != null) {
+            actionBar.setDisplayHomeAsUpEnabled(true);
+        }
 
         postId = getIntent().getStringExtra(Keys.EXTRA_POST_ID);
         if (postId == null || postId.trim().isEmpty()
@@ -74,14 +81,22 @@ public class PostDetailActivity extends AppCompatActivity {
         tvDetailAuthor = findViewById(R.id.tvDetailAuthor);
         tvDetailMemo = findViewById(R.id.tvDetailMemo);
         btnDetailJoin = findViewById(R.id.btnDetailJoin);
+        btnDetailCancel = findViewById(R.id.btnDetailCancel);
         layoutDetailInfo = findViewById(R.id.layoutDetailInfo);
 
         db = FirebaseFirestore.getInstance();
         postRef = db.collection(Keys.COL_POSTS).document(postId);
 
-        btnDetailJoin.setOnClickListener(view -> confirmJoin());
+        btnDetailJoin.setOnClickListener(view -> confirmCurrentAction());
+        btnDetailCancel.setOnClickListener(view -> confirmCurrentAction());
         registerForContextMenu(layoutDetailInfo);
         showLoading();
+    }
+
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 
     @Override
@@ -116,6 +131,11 @@ public class PostDetailActivity extends AppCompatActivity {
                         // 캐시에 없다는 이유만으로 삭제된 글로 판단하지 않음
                         if (document.getMetadata().isFromCache()) {
                             showLoading();
+                            return;
+                        }
+                        // 취소 처리 결과는 해당 트랜잭션의 완료 콜백에서 안내
+                        if (activeAction == DetailAction.CANCEL_POST) {
+                            showUnavailable("모집을 취소하는 중...");
                             return;
                         }
                         showUnavailable("존재하지 않는 모집글이에요");
@@ -189,49 +209,97 @@ public class PostDetailActivity extends AppCompatActivity {
 
     private void updateJoinButton() {
         btnDetailJoin.setEnabled(false);
-        if (joining) {
-            btnDetailJoin.setText("참여 중...");
-        } else if (currentPost == null) {
-            btnDetailJoin.setText("참여하기");
-        } else if (joinedSuccessfully
-                || (currentPost.participants != null
-                && currentPost.participants.contains(myUid))) {
-            btnDetailJoin.setText("참여 완료");
-        } else {
-            int people = currentPost.participants == null
-                    ? 0 : currentPost.participants.size();
-            if (Keys.STATUS_CLOSED.equals(currentPost.status)
-                    || people >= currentPost.maxPeople) {
-                btnDetailJoin.setText("마감됐어요");
-            } else if (!Keys.STATUS_OPEN.equals(currentPost.status)
-                    || currentPost.maxPeople < 2
-                    || currentPost.maxPeople > 4) {
-                btnDetailJoin.setText("참여할 수 없는 모집글이에요");
+        btnDetailCancel.setEnabled(false);
+        btnDetailCancel.setVisibility(View.GONE);
+        if (currentPost != null && awaitingMembership
+                && DetailPolicy.isParticipant(currentPost, myUid)
+                == expectedMembership) {
+            awaitingMembership = false;
+        }
+
+        if (activeAction != null) {
+            if (activeAction == DetailAction.JOIN) {
+                btnDetailJoin.setText("참여 중...");
             } else {
-                btnDetailJoin.setText("참여하기");
-                btnDetailJoin.setEnabled(true);
+                btnDetailJoin.setText(activeAction == DetailAction.CANCEL_POST
+                        ? "내가 만든 모임" : "참여 완료");
+                btnDetailCancel.setText("취소 중...");
+                btnDetailCancel.setVisibility(View.VISIBLE);
             }
+            return;
+        }
+        if (currentPost == null) {
+            btnDetailJoin.setText("참여하기");
+            return;
+        }
+        if (awaitingMembership) {
+            btnDetailJoin.setText("변경 반영 중...");
+            return;
+        }
+
+        DetailAction action = DetailPolicy.actionFor(currentPost, myUid);
+        if (action == DetailAction.CANCEL_POST) {
+            btnDetailJoin.setText("내가 만든 모임");
+            btnDetailCancel.setText("모집 취소");
+            btnDetailCancel.setVisibility(View.VISIBLE);
+            btnDetailCancel.setEnabled(true);
+        } else if (action == DetailAction.LEAVE) {
+            btnDetailJoin.setText("참여 완료");
+            btnDetailCancel.setText("참여 취소");
+            btnDetailCancel.setVisibility(View.VISIBLE);
+            btnDetailCancel.setEnabled(true);
+        } else if (action == DetailAction.JOIN) {
+            btnDetailJoin.setText("참여하기");
+            btnDetailJoin.setEnabled(true);
+        } else if (action == DetailAction.CLOSED) {
+            btnDetailJoin.setText("마감됐어요");
+            return;
+        } else {
+            btnDetailJoin.setText("참여할 수 없는 모집글이에요");
+            return;
         }
     }
 
-    private void confirmJoin() {
-        if (joining || currentPost == null || !btnDetailJoin.isEnabled()) {
+    private void confirmCurrentAction() {
+        if (activeAction != null || awaitingMembership
+                || currentPost == null) {
             return;
         }
-        new AlertDialog.Builder(this)
-                .setTitle("참여할까요?")
-                .setMessage("시간에 맞춰 약속 장소로 가주세요!")
-                .setPositiveButton("참여", (dialog, which) -> join())
-                .setNegativeButton("취소", null)
-                .show();
+        DetailAction action = DetailPolicy.actionFor(currentPost, myUid);
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this);
+        if (action == DetailAction.CANCEL_POST) {
+            dialog.setTitle("모집을 취소할까요?");
+            dialog.setMessage("이 모집글이 삭제되고 목록에서 사라져요. "
+                    + "취소한 모집은 되돌릴 수 없어요.");
+            dialog.setPositiveButton("모집 취소", (d, which) -> cancelPost());
+        } else if (action == DetailAction.LEAVE) {
+            dialog.setTitle("참여를 취소할까요?");
+            dialog.setMessage("이 모집의 참여 인원에서 빠지게 돼요.");
+            dialog.setPositiveButton("참여 취소", (d, which) -> leave());
+        } else if (action == DetailAction.JOIN) {
+            dialog.setTitle("참여할까요?");
+            dialog.setMessage("시간에 맞춰 약속 장소로 가주세요!");
+            dialog.setPositiveButton("참여", (d, which) -> join());
+        } else {
+            return;
+        }
+        dialog.setNegativeButton("아니요", null).show();
+    }
+
+    private boolean beginAction(DetailAction action) {
+        if (activeAction != null || awaitingMembership
+                || currentPost == null || !checkLogin()) {
+            return false;
+        }
+        activeAction = action;
+        updateJoinButton();
+        return true;
     }
 
     private void join() {
-        if (joining || currentPost == null || !checkLogin()) {
+        if (!beginAction(DetailAction.JOIN)) {
             return;
         }
-        joining = true;
-        updateJoinButton();
         final String joiningUid = myUid;
 
         // 최신 인원과 모집 상태를 같은 트랜잭션 안에서 확인한 뒤 갱신
@@ -277,31 +345,89 @@ public class PostDetailActivity extends AppCompatActivity {
             transaction.update(postRef, updates);
             return null;
         }).addOnSuccessListener(result -> {
-            joining = false;
-            joinedSuccessfully = true;
-            if (isFinishing() || isDestroyed()) {
-                return;
+            completeMembershipChange(true, "참여 완료! 맛있게 드세요");
+        }).addOnFailureListener(error -> failAction(error, "참여하지 못했어요"));
+    }
+
+    private void leave() {
+        if (!beginAction(DetailAction.LEAVE)) {
+            return;
+        }
+        final String leavingUid = myUid;
+
+        db.runTransaction(transaction -> {
+            Post post = transaction.get(postRef).toObject(Post.class);
+            String nextStatus;
+            try {
+                nextStatus = DetailPolicy.statusAfterLeaving(post, leavingUid);
+            } catch (IllegalStateException exception) {
+                throw new FirebaseFirestoreException(exception.getMessage(),
+                        FirebaseFirestoreException.Code.FAILED_PRECONDITION);
             }
-            updateJoinButton();
-            toast("참여 완료! 맛있게 드세요");
-        }).addOnFailureListener(error -> {
-            joining = false;
-            Log.e(TAG, "참여 실패", error);
-            if (isFinishing() || isDestroyed()) {
-                return;
+
+            Map<String, Object> updates = new HashMap<>();
+            updates.put(Keys.FIELD_PARTICIPANTS, FieldValue.arrayRemove(leavingUid));
+            if (!nextStatus.equals(post.status)) {
+                updates.put(Keys.FIELD_STATUS, nextStatus);
             }
-            // 무조건 활성화하지 않고, 최신 글의 상태로 버튼을 다시 판단
+            transaction.update(postRef, updates);
+            return null;
+        }).addOnSuccessListener(result -> {
+            completeMembershipChange(false, "참여를 취소했어요");
+        }).addOnFailureListener(error -> failAction(error, "참여를 취소하지 못했어요"));
+    }
+
+    private void cancelPost() {
+        if (!beginAction(DetailAction.CANCEL_POST)) {
+            return;
+        }
+        final String cancellingUid = myUid;
+
+        db.runTransaction(transaction -> {
+            Post post = transaction.get(postRef).toObject(Post.class);
+            try {
+                DetailPolicy.requireOwner(post, cancellingUid);
+            } catch (IllegalStateException exception) {
+                throw new FirebaseFirestoreException(exception.getMessage(),
+                        FirebaseFirestoreException.Code.FAILED_PRECONDITION);
+            }
+            transaction.delete(postRef);
+            return null;
+        }).addOnSuccessListener(result -> {
+            activeAction = null;
+            if (!isFinishing() && !isDestroyed()) {
+                toast("모집을 취소했어요");
+                finish();
+            }
+        }).addOnFailureListener(error -> failAction(error, "모집을 취소하지 못했어요"));
+    }
+
+    private void completeMembershipChange(boolean joined, String message) {
+        activeAction = null;
+        expectedMembership = joined;
+        awaitingMembership = true;
+        if (!isFinishing() && !isDestroyed()) {
             updateJoinButton();
-            toast(error.getMessage() == null
-                    ? "참여하지 못했어요" : error.getMessage());
-        });
+            toast(message);
+        }
+    }
+
+    private void failAction(Exception error, String fallback) {
+        activeAction = null;
+        awaitingMembership = false;
+        Log.e(TAG, fallback, error);
+        if (!isFinishing() && !isDestroyed()) {
+            updateJoinButton();
+            toast(error.getMessage() == null ? fallback : error.getMessage());
+        }
     }
 
     @Override
     public void onCreateContextMenu(ContextMenu menu, View view,
                                     ContextMenu.ContextMenuInfo menuInfo) {
         super.onCreateContextMenu(menu, view, menuInfo);
-        if (view == layoutDetailInfo && currentPost != null) {
+        if (view == layoutDetailInfo && currentPost != null
+                && activeAction == null && !awaitingMembership) {
             getMenuInflater().inflate(R.menu.menu_detail, menu);
         }
     }
@@ -309,7 +435,8 @@ public class PostDetailActivity extends AppCompatActivity {
     @Override
     public boolean onContextItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.menuDetailReport) {
-            if (currentPost == null || reporting) {
+            if (currentPost == null || reporting
+                    || activeAction != null || awaitingMembership) {
                 return true;
             }
             new AlertDialog.Builder(this)
@@ -324,7 +451,8 @@ public class PostDetailActivity extends AppCompatActivity {
     }
 
     private void report() {
-        if (reporting || currentPost == null || !checkLogin()) {
+        if (reporting || currentPost == null || activeAction != null
+                || awaitingMembership || !checkLogin()) {
             return;
         }
         reporting = true;
@@ -363,6 +491,8 @@ public class PostDetailActivity extends AppCompatActivity {
         tvDetailMemo.setText("");
         btnDetailJoin.setText("참여하기");
         btnDetailJoin.setEnabled(false);
+        btnDetailCancel.setEnabled(false);
+        btnDetailCancel.setVisibility(View.GONE);
     }
 
     private String textOrDefault(String value) {
@@ -372,5 +502,85 @@ public class PostDetailActivity extends AppCompatActivity {
 
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    enum DetailAction {
+        JOIN, LEAVE, CANCEL_POST, CLOSED, UNAVAILABLE
+    }
+
+    // 화면 표시와 트랜잭션이 같은 참여·취소 기준을 사용
+    static final class DetailPolicy {
+
+        static boolean isParticipant(Post post, String uid) {
+            return post != null && uid != null && post.participants != null
+                    && post.participants.contains(uid);
+        }
+
+        static boolean isOwner(Post post, String uid) {
+            return post != null && uid != null && !uid.trim().isEmpty()
+                    && uid.equals(post.authorUid);
+        }
+
+        static DetailAction actionFor(Post post, String uid) {
+            if (post == null || uid == null || uid.trim().isEmpty()) {
+                return DetailAction.UNAVAILABLE;
+            }
+            if (isOwner(post, uid)) {
+                return DetailAction.CANCEL_POST;
+            }
+            if (isParticipant(post, uid)) {
+                return DetailAction.LEAVE;
+            }
+            if (post.maxPeople < 2 || post.maxPeople > 4
+                    || (!Keys.STATUS_OPEN.equals(post.status)
+                    && !Keys.STATUS_CLOSED.equals(post.status))) {
+                return DetailAction.UNAVAILABLE;
+            }
+            int people = post.participants == null ? 0 : post.participants.size();
+            if (Keys.STATUS_CLOSED.equals(post.status) || people >= post.maxPeople) {
+                return DetailAction.CLOSED;
+            }
+            return DetailAction.JOIN;
+        }
+
+        static String statusAfterLeaving(Post post, String uid) {
+            if (post == null) {
+                throw new IllegalStateException("삭제되었거나 존재하지 않는 모집글이에요");
+            }
+            if (isOwner(post, uid)) {
+                throw new IllegalStateException("작성자는 모집 취소를 선택해 주세요");
+            }
+            if (!isParticipant(post, uid)) {
+                throw new IllegalStateException("이미 참여가 취소됐어요");
+            }
+            if (!Keys.STATUS_OPEN.equals(post.status)
+                    && !Keys.STATUS_CLOSED.equals(post.status)) {
+                throw new IllegalStateException("모집글 상태를 확인해 주세요");
+            }
+
+            int remaining = 0;
+            for (String participant : post.participants) {
+                if (!uid.equals(participant)) {
+                    remaining++;
+                }
+            }
+            // 정원 도달로 마감된 모집만, 취소로 자리가 생기면 다시 모집
+            if (Keys.STATUS_CLOSED.equals(post.status)
+                    && post.maxPeople >= 2 && post.maxPeople <= 4
+                    && post.participants.size() >= post.maxPeople
+                    && remaining < post.maxPeople) {
+                return Keys.STATUS_OPEN;
+            }
+            return post.status;
+        }
+
+        static void requireOwner(Post post, String uid) {
+            if (post == null) {
+                throw new IllegalStateException("삭제되었거나 존재하지 않는 모집글이에요");
+            }
+            if (!isOwner(post, uid)) {
+                throw new IllegalStateException("작성자만 모집을 취소할 수 있어요");
+            }
+        }
     }
 }

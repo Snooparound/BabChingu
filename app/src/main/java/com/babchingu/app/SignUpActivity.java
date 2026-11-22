@@ -27,6 +27,10 @@ public class SignUpActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_sign_up);
         setTitle("회원가입");
+        // 상단 바 왼쪽에 뒤로가기(←) 버튼 표시
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
         etSignUpEmail = findViewById(R.id.etSignUpEmail);
         etSignUpPassword = findViewById(R.id.etSignUpPassword);
@@ -120,5 +124,12 @@ public class SignUpActivity extends AppCompatActivity {
 
     private void toast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    // 상단 바의 ← 버튼을 누르면 이전 화면으로 돌아감
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 }

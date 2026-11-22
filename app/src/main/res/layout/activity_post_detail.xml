@@ -64,4 +64,13 @@
         android:enabled="false"
         android:text="참여하기" />
 
+    <!-- 참여한 사람(작성자 제외)에게만 보이는 참여 취소 버튼 -->
+    <Button
+        android:id="@+id/btnDetailCancel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="참여 취소"
+        android:visibility="gone" />
+
 </LinearLayout>
