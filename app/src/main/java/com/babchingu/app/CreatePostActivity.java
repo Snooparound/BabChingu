@@ -1,5 +1,6 @@
 package com.babchingu.app;
 
+import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Button;
@@ -18,15 +19,19 @@ import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FirebaseFirestore;
 
+import java.util.Calendar;
+import java.util.Locale;
+
 public class CreatePostActivity extends AppCompatActivity {
 
-    EditText etCreateTime, etCreateMemo;
-    TextView tvCreatePlace;
-    Button btnCreatePlace, btnCreateSubmit;
+    EditText etCreateMemo;
+    TextView tvCreatePlace, tvCreateTime;
+    Button btnCreatePlace, btnCreateTime, btnCreateSubmit;
     RadioGroup rgCreatePeople;
 
     final String[] places = {"학생식당", "교직원식당", "학교 앞 식당"};
     int selectedPlace = -1;   // -1 = 아직 선택 안 함
+    String selectedTime = null;   // "12:10" 형식, null = 아직 선택 안 함
 
     String myUid;
 
@@ -48,12 +53,16 @@ public class CreatePostActivity extends AppCompatActivity {
         }
         myUid = fu.getUid();
 
-        etCreateTime = findViewById(R.id.etCreateTime);
+        tvCreateTime = findViewById(R.id.tvCreateTime);
+        btnCreateTime = findViewById(R.id.btnCreateTime);
         etCreateMemo = findViewById(R.id.etCreateMemo);
         tvCreatePlace = findViewById(R.id.tvCreatePlace);
         btnCreatePlace = findViewById(R.id.btnCreatePlace);
         btnCreateSubmit = findViewById(R.id.btnCreateSubmit);
         rgCreatePeople = findViewById(R.id.rgCreatePeople);
+
+        // 시계 대화상자(TimePickerDialog)로 식사 시간 고르기
+        btnCreateTime.setOnClickListener(v -> showTimePicker());
 
         // 7장 setSingleChoiceItems: 장소 하나 고르기
         btnCreatePlace.setOnClickListener(v -> {
@@ -70,14 +79,32 @@ public class CreatePostActivity extends AppCompatActivity {
         btnCreateSubmit.setOnClickListener(v -> submit());
     }
 
+    private void showTimePicker() {
+        Calendar now = Calendar.getInstance();
+        TimePickerDialog dlg = new TimePickerDialog(CreatePostActivity.this,
+                (view, hour, minute) -> {
+                    // 오늘 이미 지난 시간은 고를 수 없게
+                    Calendar c = Calendar.getInstance();
+                    int current = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE);
+                    if (hour * 60 + minute < current) {
+                        toast("이미 지난 시간이에요. 다시 골라주세요");
+                        return;
+                    }
+                    selectedTime = String.format(Locale.KOREA, "%02d:%02d", hour, minute);
+                    tvCreateTime.setText(selectedTime);
+                },
+                now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), true);   // true = 24시간 표시
+        dlg.setTitle("언제 먹을까요?");
+        dlg.show();
+    }
+
     // 입력 검사 (4장 + 7장 토스트)
     private void submit() {
-        String time = etCreateTime.getText().toString().trim();
+        String time = selectedTime;
         String memo = etCreateMemo.getText().toString().trim();
 
-        // "12:10" 형식인지 검사
-        if (!time.matches("^([01]\\d|2[0-3]):[0-5]\\d$")) {
-            toast("시간을 12:10 형식으로 입력해주세요");
+        if (time == null) {
+            toast("식사 시간을 선택해주세요");
             return;
         }
         if (selectedPlace == -1) {
