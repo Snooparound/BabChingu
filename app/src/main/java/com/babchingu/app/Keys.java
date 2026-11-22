@@ -23,4 +23,7 @@ public class Keys {
 
     // users 필드
     public static final String FIELD_NICKNAME = "nickname";
+
+    public static final String FIELD_POST_ID = "postId";
+    public static final String FIELD_REPORTER_UID = "reporterUid";
 }
